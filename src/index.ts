@@ -9,6 +9,13 @@ interface User {
     email: string;
 }
 
+interface Subject {
+    id: number;
+    user_id: number;
+    name: string;
+    created_at: string;
+}
+
 import { config } from "dotenv";
 config();
 
@@ -17,6 +24,26 @@ const PORT = process.env.PORT || 3000;
 const DB = process.env.DB || "database.sqlite";
 
 const db = new Sqlite(DB);
+
+db.exec(`
+    PRAGMA foreign_keys = ON;
+
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS subjects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+`);
 
 if (!SECRET) {
     console.error("SECRET environment variable is not set.");
@@ -136,6 +163,91 @@ app.post("/auth/login", async (req: Request, res: Response) => {
         console.error("Error during login:", e);
         return res.status(500).json({ error: "Internal server error." });
     }
+});
+
+app.get("/auth/user", authHandler, (req: Request, res: Response) => {
+    const user = res.locals.user as User;
+    return res.json(user);
+});
+
+app.get("/subjects", authHandler, (req: Request, res: Response) => {
+    const rows = db
+        .prepare(
+            "SELECT id, user_id, name, created_at FROM subjects WHERE user_id = ?"
+        )
+        .all(res.locals.user.id);
+    return res.json(rows);
+});
+
+app.get("/subjects/:id", authHandler, (req: Request, res: Response) => {
+    const subjectId = parseInt(req.params.id);
+    const subject = db
+        .prepare(
+            "SELECT id, user_id, name, created_at FROM subjects WHERE id = ? AND user_id = ?"
+        )
+        .get(subjectId, res.locals.user.id);
+    if (!subject) {
+        return res.status(404).json({ error: "Subject not found." });
+    }
+    return res.json(subject);
+});
+
+app.post("/subjects", authHandler, (req: Request, res: Response) => {
+    const { name } = req.body;
+    if (!name) return res.status(400).json({ error: "Name is required." });
+    const stmt = db.prepare(
+        "INSERT INTO subjects (user_id, name) VALUES (?, ?)"
+    );
+    const r = stmt.run(res.locals.user.id, name);
+
+    const subject = db
+        .prepare("SELECT * FROM subjects WHERE id = ?")
+        .get(r.lastInsertRowid as number) as Subject;
+
+    return res.status(201).json(subject);
+});
+
+app.put("/subjects/:id", authHandler, (req: Request, res: Response) => {
+    const subjectId = parseInt(req.params.id);
+    const { name } = req.body;
+
+    if (!name) return res.status(400).json({ error: "Name is required." });
+
+    const subject = db
+        .prepare("SELECT id FROM subjects WHERE id = ? AND user_id = ?")
+        .get(subjectId, res.locals.user.id);
+
+    if (!subject) {
+        return res.status(404).json({ error: "Subject not found." });
+    }
+
+    const stmt = db.prepare(
+        "UPDATE subjects SET name = ? WHERE id = ? AND user_id = ?"
+    );
+
+    stmt.run(name, subjectId, res.locals.user.id);
+
+    const updatedSubject = db
+        .prepare("SELECT * FROM subjects WHERE id = ? AND user_id = ?")
+        .get(subjectId, res.locals.user.id) as Subject;
+
+    return res.json(updatedSubject);
+});
+
+app.delete("/subjects/:id", authHandler, (req: Request, res: Response) => {
+    const subjectId = parseInt(req.params.id);
+
+    const subject = db
+        .prepare("SELECT id FROM subjects WHERE id = ? and user_id = ?")
+        .get(subjectId, res.locals.user.id);
+
+    if (!subject) {
+        return res.status(404).json({ error: "Subject not found." });
+    }
+
+    db.prepare("DELETE FROM subjects WHERE id = ?").run(subjectId);
+
+    return res.status(204).send();
 });
 
 app.listen(PORT, () => {
