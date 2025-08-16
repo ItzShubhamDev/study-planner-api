@@ -24,6 +24,15 @@ interface Topic {
     created_at: string;
 }
 
+interface Session {
+    id: number;
+    topic_id: number;
+    start_time: string;
+    duration: number;
+    notes?: string;
+    created_at: string;
+}
+
 import { config } from "dotenv";
 config();
 
@@ -59,6 +68,16 @@ db.exec(`
         status TEXT CHECK(status IN ('pending', 'in_progress', 'completed')) DEFAULT 'pending'))
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+    )
+
+    CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topic_id INTEGER NOT NULL,
+        start_time TEXT NOT NULL,
+        duration INTEGER NOT NULL,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
     )
 `);
 
@@ -208,7 +227,32 @@ app.get("/subjects/:id", authHandler, (req: Request, res: Response) => {
     if (!subject) {
         return res.status(404).json({ error: "Subject not found." });
     }
-    return res.json(subject);
+
+    const result = [];
+    const topics = db
+        .prepare(
+            "SELECT id, name, status, created_at FROM topics WHERE subject_id = ?"
+        )
+        .all(subjectId) as Topic[];
+
+    for (const t of topics) {
+        const sessions = db
+            .prepare(
+                "SELECT id, start_time, duration, notes, created_at FROM sessions WHERE topic_id = ?"
+            )
+            .all(t.id) as Session[];
+        const topic = {
+            ...t,
+            sessions,
+        };
+
+        result.push(topic);
+    }
+
+    return res.json({
+        ...subject,
+        topics: result,
+    });
 });
 
 app.post("/subjects", authHandler, (req: Request, res: Response) => {
@@ -313,7 +357,13 @@ app.get("/topics/:topicId", authHandler, (req: Request, res: Response) => {
         });
     }
 
-    return res.json(topic);
+    const sessions = db
+        .prepare(
+            "SELECT id, start_time, duration, notes, created_at FROM sessions WHERE topic_id = ?"
+        )
+        .all(topicId) as Session[] | undefined;
+
+    return res.json({ ...topic, sessions });
 });
 
 app.post(
@@ -423,6 +473,106 @@ app.delete("/topics/:topicId", authHandler, (req: Request, res: Response) => {
 
     return res.status(204).send();
 });
+
+// Sessions
+
+app.get(
+    "/topics/:topicId/sessions",
+    authHandler,
+    (req: Request, res: Response) => {
+        const topicId = parseInt(req.params.topicId);
+        const topic = db
+            .prepare("SELECT id, subject_id FROM topics WHERE id = ?")
+            .get(topicId) as Topic | undefined;
+
+        if (!topic) {
+            return res.status(404).json({
+                error: "Topic not found.",
+            });
+        }
+
+        const subject = db
+            .prepare("SELECT user_id FROM subjects WHERE id = ?")
+            .get(topic.subject_id) as Subject | undefined;
+
+        if (!subject || subject.user_id !== res.locals.user.id) {
+            return res.status(404).json({
+                error: "Topic not found.",
+            });
+        }
+
+        const sessions = db
+            .prepare(
+                "SELECT id, start_time, duration, notes, created_at FROM sessions WHERE topic_id = ?"
+            )
+            .all(topicId) as Session[];
+
+        return res.json(sessions);
+    }
+);
+
+app.post(
+    "/topics/:topicId/sessions",
+    authHandler,
+    (req: Request, res: Response) => {
+        const topicId = parseInt(req.params.topicId);
+        const topic = db
+            .prepare("SELECT id, subject_id, status FROM topics WHERE id = ?")
+            .get(topicId) as Topic | undefined;
+
+        if (!topic) {
+            return res.status(404).json({
+                error: "Topic not found.",
+            });
+        }
+
+        const subject = db
+            .prepare("SELECT user_id FROM subjects WHERE id = ?")
+            .get(topic.subject_id) as Subject | undefined;
+
+        if (!subject || subject.user_id !== res.locals.user.id) {
+            return res.status(404).json({
+                error: "Topic not found",
+            });
+        }
+
+        if (topic.status === "completed") {
+            return res.status(400).json({
+                error: "Topic already completed, unable to add sessions.",
+            });
+        }
+
+        const { start_time, duration, notes } = req.body;
+
+        if (!start_time || !duration) {
+            return res.status(400).json({
+                error: "Start time and duration are required.",
+            });
+        }
+
+        try {
+            new Date(start_time);
+        } catch {
+            return res.status(400).json({
+                error: 'Invalid start time format. Format should be "YYYY-MM-DDThh:mm:ssZ" in UTC.',
+            });
+        }
+
+        const stmt = db.prepare(
+            "INSERT INTO sessions (topic_id, start_time, duration, notes) VALUES (?, ?, ?, ?)"
+        );
+
+        const r = stmt.run(topicId, start_time, duration, notes || null);
+
+        const session = db
+            .prepare(
+                "SELECT id, topic_id, start_time, duration, notes, created_at FROM sessions WHERE id = ?"
+            )
+            .get(r.lastInsertRowid) as Session | undefined;
+
+        return res.status(201).json(session);
+    }
+);
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
