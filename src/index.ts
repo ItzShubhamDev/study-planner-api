@@ -1,7 +1,22 @@
+/**
+ * @swagger
+ * tags:
+ *   - name: Auth
+ *     description: Authentication endpoints
+ *   - name: Subjects
+ *     description: Subjects endpoints
+ *   - name: Topics
+ *     description: Topics endpoints
+ *   - name: Sessions
+ *     description: Sessions endpoints
+ */
+
 import express, { Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import Sqlite from "better-sqlite3";
 import bcrypt from "bcrypt";
+import swaggerJsDoc from "swagger-jsdoc";
+import swaggerUi from "swagger-ui-express";
 
 interface User {
     id: number;
@@ -65,10 +80,10 @@ db.exec(`
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         subject_id INTEGER NOT NULL,
         name TEXT NOT NULL,
-        status TEXT CHECK(status IN ('pending', 'in_progress', 'completed')) DEFAULT 'pending'))
+        status TEXT CHECK(status IN ('pending', 'in_progress', 'completed')) DEFAULT 'pending',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
-    )
+    );
 
     CREATE TABLE IF NOT EXISTS sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +93,7 @@ db.exec(`
         notes TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (topic_id) REFERENCES topics(id) ON DELETE CASCADE
-    )
+    );
 `);
 
 if (!SECRET) {
@@ -137,6 +152,33 @@ app.get("/", (_req: Request, res: Response) => {
 
 // Authentication Endpoints
 app.post("/auth/register", async (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /auth/register:
+     *   post:
+     *     summary: Registers a new user
+     *     tags: [Auth]
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [name, email, password]
+     *             properties:
+     *               name:
+     *                 type: string
+     *               email:
+     *                 type: string
+     *                 format: email
+     *               password:
+     *                 type: string
+     *     responses:
+     *       200:
+     *         description: Successfully registered
+     *       400:
+     *         description: Missing fields or already exists
+     */
     const { name, email, password } = req.body;
     if (!name || !email || !password)
         return res.status(400).json({ error: "Missing required fields." });
@@ -163,6 +205,31 @@ app.post("/auth/register", async (req: Request, res: Response) => {
 });
 
 app.post("/auth/login", async (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /auth/login:
+     *   post:
+     *     summary: Login an existing user
+     *     tags: [Auth]
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [email, password]
+     *             properties:
+     *               email:
+     *                 type: string
+     *                 format: email
+     *               password:
+     *                 type: string
+     *     responses:
+     *       200:
+     *         description: Returns user along with a JWT token
+     *       401:
+     *         description: Invalid credentials
+     */
     const { email, password } = req.body;
     if (!email || !password)
         return res.status(400).json({ error: "Missing required fields." });
@@ -203,12 +270,38 @@ app.post("/auth/login", async (req: Request, res: Response) => {
 });
 
 app.get("/auth/user", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /auth/user:
+     *   get:
+     *     summary: Get current user
+     *     tags: [Auth]
+     *     security:
+     *       - bearerAuth: ["Token"]
+     *     responses:
+     *       200:
+     *         description: Returns the current user
+     *       401:
+     *         description: Unauthorized
+     */
     const user = res.locals.user as User;
     return res.json(user);
 });
 
 // Subjects Endpoints
 app.get("/subjects", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /subjects:
+     *   get:
+     *     summary: Get all subjects of the user
+     *     tags: [Subjects]
+     *     security:
+     *       - bearerAuth: []
+     *     responses:
+     *       200:
+     *         description: List of subjects
+     */
     const rows = db
         .prepare(
             "SELECT id, user_id, name, created_at FROM subjects WHERE user_id = ?"
@@ -218,6 +311,26 @@ app.get("/subjects", authHandler, (req: Request, res: Response) => {
 });
 
 app.get("/subjects/:id", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /subjects/{id}:
+     *   get:
+     *     summary: Get subject details with ith topics & sessions)
+     *     tags: [Subjects]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema:
+     *           type: integer
+     *     responses:
+     *       200:
+     *         description: Subject with topics and sessions
+     *       404:
+     *         description: Subject not found
+     */
     const subjectId = parseInt(req.params.id);
     const subject = db
         .prepare(
@@ -256,6 +369,28 @@ app.get("/subjects/:id", authHandler, (req: Request, res: Response) => {
 });
 
 app.post("/subjects", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /subjects:
+     *   post:
+     *     summary: Create a subject
+     *     tags: [Subjects]
+     *     security:
+     *       - bearerAuth: []
+     *     requestBody:
+     *       required: true
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [name]
+     *             properties:
+     *               name:
+     *                 type: string
+     *     responses:
+     *       201:
+     *         description: Created subject
+     */
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required." });
     const stmt = db.prepare(
@@ -271,6 +406,33 @@ app.post("/subjects", authHandler, (req: Request, res: Response) => {
 });
 
 app.put("/subjects/:id", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /subjects/{id}:
+     *   put:
+     *     summary: Updates a subject
+     *     tags: [Subjects]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema:
+     *           type: integer
+     *     requestBody:
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             required: [name]
+     *             properties:
+     *               name:
+     *                 type: string
+     *     responses:
+     *       200:
+     *         description: Updated subject
+     */
     const subjectId = parseInt(req.params.id);
     const { name } = req.body;
 
@@ -298,6 +460,24 @@ app.put("/subjects/:id", authHandler, (req: Request, res: Response) => {
 });
 
 app.delete("/subjects/:id", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /subjects/{id}:
+     *   delete:
+     *     summary: Deletes a subject
+     *     tags: [Subjects]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - in: path
+     *         name: id
+     *         required: true
+     *         schema:
+     *           type: integer
+     *     responses:
+     *       204:
+     *         description: Deleted successfully
+     */
     const subjectId = parseInt(req.params.id);
 
     const subject = db
@@ -319,6 +499,24 @@ app.get(
     "/subjects/:subjectId/topics",
     authHandler,
     (req: Request, res: Response) => {
+        /**
+         * @swagger
+         * /subjects/{subjectId}/topics:
+         *   get:
+         *     summary: Get topics of a subject
+         *     tags: [Topics]
+         *     security:
+         *       - bearerAuth: []
+         *     parameters:
+         *       - in: path
+         *         name: subjectId
+         *         required: true
+         *         schema:
+         *           type: integer
+         *     responses:
+         *       200:
+         *         description: List of topics
+         */
         const subjectId = parseInt(req.params.subjectId);
         const subject = db
             .prepare("SELECT id FROM subjects WHERE id = ? AND user_id = ?")
@@ -338,6 +536,24 @@ app.get(
 );
 
 app.get("/topics/:topicId", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /topics/{topicId}:
+     *   get:
+     *     summary: Get topic details (with sessions)
+     *     tags: [Topics]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - in: path
+     *         name: topicId
+     *         required: true
+     *         schema:
+     *           type: integer
+     *     responses:
+     *       200:
+     *         description: Topic with sessions
+     */
     const topicId = parseInt(req.params.topicId);
     const topic = db
         .prepare(
@@ -370,6 +586,33 @@ app.post(
     "/subjects/:subjectId/topics",
     authHandler,
     (req: Request, res: Response) => {
+        /**
+         * @swagger
+         * /subjects/{subjectId}/topics:
+         *   post:
+         *     summary: Create a new topic for a subject
+         *     tags: [Topics]
+         *     security:
+         *       - bearerAuth: []
+         *     parameters:
+         *       - in: path
+         *         name: subjectId
+         *         required: true
+         *         schema:
+         *           type: integer
+         *     requestBody:
+         *       content:
+         *         application/json:
+         *           schema:
+         *             type: object
+         *             required: [name]
+         *             properties:
+         *               name:
+         *                 type: string
+         *     responses:
+         *       201:
+         *         description: Created topic
+         */
         const subjectId = parseInt(req.params.subjectId);
         const { name } = req.body;
         const subject = db
@@ -398,6 +641,35 @@ app.post(
 );
 
 app.put("/topics/:topicId", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /topics/{topicId}:
+     *   put:
+     *     summary: Updates a topic
+     *     tags: [Topics]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - in: path
+     *         name: topicId
+     *         required: true
+     *         schema:
+     *           type: integer
+     *     requestBody:
+     *       content:
+     *         application/json:
+     *           schema:
+     *             type: object
+     *             properties:
+     *               name:
+     *                 type: string
+     *               status:
+     *                 type: string
+     *                 enum: [pending, in_progress, completed]
+     *     responses:
+     *       200:
+     *         description: Updated topic
+     */
     const topicId = parseInt(req.params.topicId);
 
     const { name, status } = req.body;
@@ -448,6 +720,24 @@ app.put("/topics/:topicId", authHandler, (req: Request, res: Response) => {
 });
 
 app.delete("/topics/:topicId", authHandler, (req: Request, res: Response) => {
+    /**
+     * @swagger
+     * /topics/{topicId}:
+     *   delete:
+     *     summary: Deletes a topic
+     *     tags: [Topics]
+     *     security:
+     *       - bearerAuth: []
+     *     parameters:
+     *       - in: path
+     *         name: topicId
+     *         required: true
+     *         schema:
+     *           type: integer
+     *     responses:
+     *       204:
+     *         description: Deleted successfully
+     */
     const topicId = parseInt(req.params.topicId);
     const topic = db
         .prepare("SELECT id, subject_id FROM topics WHERE id = ?")
@@ -480,6 +770,24 @@ app.get(
     "/topics/:topicId/sessions",
     authHandler,
     (req: Request, res: Response) => {
+        /**
+         * @swagger
+         * /topics/{topicId}/sessions:
+         *   get:
+         *     summary: Get sessions for a topic
+         *     tags: [Sessions]
+         *     security:
+         *       - bearerAuth: []
+         *     parameters:
+         *       - in: path
+         *         name: topicId
+         *         required: true
+         *         schema:
+         *           type: integer
+         *     responses:
+         *       200:
+         *         description: List of sessions
+         */
         const topicId = parseInt(req.params.topicId);
         const topic = db
             .prepare("SELECT id, subject_id FROM topics WHERE id = ?")
@@ -515,6 +823,39 @@ app.post(
     "/topics/:topicId/sessions",
     authHandler,
     (req: Request, res: Response) => {
+        /**
+         * @swagger
+         * /topics/{topicId}/sessions:
+         *   post:
+         *     summary: Add a new session for a topic
+         *     tags: [Sessions]
+         *     security:
+         *       - bearerAuth: []
+         *     parameters:
+         *       - in: path
+         *         name: topicId
+         *         required: true
+         *         schema:
+         *           type: integer
+         *     requestBody:
+         *       content:
+         *         application/json:
+         *           schema:
+         *             type: object
+         *             required: [start_time, duration]
+         *             properties:
+         *               start_time:
+         *                 type: string
+         *                 example: "2025-08-17T12:00:00Z"
+         *               duration:
+         *                 type: integer
+         *                 example: 60
+         *               notes:
+         *                 type: string
+         *     responses:
+         *       201:
+         *         description: Created session
+         */
         const topicId = parseInt(req.params.topicId);
         const topic = db
             .prepare("SELECT id, subject_id, status FROM topics WHERE id = ?")
@@ -573,6 +914,36 @@ app.post(
         return res.status(201).json(session);
     }
 );
+
+const options = {
+    definition: {
+        openapi: "3.1.0",
+        info: {
+            title: "Study Planner API",
+            version: "1.0.0",
+            description:
+                "An API to manage your study sessions, topics and subjects to strategically plan your study times.",
+        },
+        servers: [
+            {
+                url: `http://localhost:${PORT}`,
+            },
+        ],
+        components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: "http",
+                    scheme: "bearer",
+                    bearerFormat: "JWT",
+                },
+            },
+        },
+    },
+    apis: ["./src/index.ts"],
+};
+
+const specs = swaggerJsDoc(options);
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(specs));
 
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
