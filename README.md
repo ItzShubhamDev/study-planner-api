@@ -29,8 +29,8 @@ npm run start
 
 ## Environmet Variables
 
-`SECRET` - Required for encrypting data on the database. 
-`PORT` - The port to run the server on. 
+`SECRET` - Required for encrypting data on the database. <br />
+`PORT` - The port to run the server on. <br />
 `DB` - The location to store database.
 
 ## API Endpoints
