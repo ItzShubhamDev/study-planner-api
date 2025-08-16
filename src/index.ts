@@ -16,6 +16,14 @@ interface Subject {
     created_at: string;
 }
 
+interface Topic {
+    id: number;
+    subject_id: number;
+    name: string;
+    status: "pending" | "in_progress" | "completed";
+    created_at: string;
+}
+
 import { config } from "dotenv";
 config();
 
@@ -43,6 +51,15 @@ db.exec(`
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS topics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        status TEXT CHECK(status IN ('pending', 'in_progress', 'completed')) DEFAULT 'pending'))
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE CASCADE
+    )
 `);
 
 if (!SECRET) {
@@ -99,6 +116,7 @@ app.get("/", (_req: Request, res: Response) => {
     });
 });
 
+// Authentication Endpoints
 app.post("/auth/register", async (req: Request, res: Response) => {
     const { name, email, password } = req.body;
     if (!name || !email || !password)
@@ -170,6 +188,7 @@ app.get("/auth/user", authHandler, (req: Request, res: Response) => {
     return res.json(user);
 });
 
+// Subjects Endpoints
 app.get("/subjects", authHandler, (req: Request, res: Response) => {
     const rows = db
         .prepare(
@@ -246,6 +265,161 @@ app.delete("/subjects/:id", authHandler, (req: Request, res: Response) => {
     }
 
     db.prepare("DELETE FROM subjects WHERE id = ?").run(subjectId);
+
+    return res.status(204).send();
+});
+
+// Topics Endpoints
+
+app.get(
+    "/subjects/:subjectId/topics",
+    authHandler,
+    (req: Request, res: Response) => {
+        const subjectId = parseInt(req.params.subjectId);
+        const subject = db
+            .prepare("SELECT id FROM subjects WHERE id = ? AND user_id = ?")
+            .get(subjectId, res.locals.user.id);
+        if (!subject) {
+            return res.status(404).json({ error: "Subject not found." });
+        }
+
+        const topics = db
+            .prepare(
+                "SELECT id, subject_id, name, status, created_at FROM topics WHERE subject_id = ?"
+            )
+            .all(subjectId);
+
+        return res.json(topics);
+    }
+);
+
+app.get("/topics/:topicId", authHandler, (req: Request, res: Response) => {
+    const topicId = parseInt(req.params.topicId);
+    const topic = db
+        .prepare(
+            "SELECT id, subject_id, name, status, created_at FROM topics WHERE id = ?"
+        )
+        .get(topicId) as Topic | undefined;
+    if (!topic) {
+        return res.status(404).json({ error: "Topic not found." });
+    }
+    const subject = db
+        .prepare("SELECT user_id FROM subjects WHERE id = ?")
+        .get(topic.subject_id) as Subject | undefined;
+
+    if (!subject || subject.user_id !== res.locals.user.id) {
+        return res.status(404).json({
+            error: "Topic not found.",
+        });
+    }
+
+    return res.json(topic);
+});
+
+app.post(
+    "/subjects/:subjectId/topics",
+    authHandler,
+    (req: Request, res: Response) => {
+        const subjectId = parseInt(req.params.subjectId);
+        const { name } = req.body;
+        const subject = db
+            .prepare("SELECT user_id FROM subjects WHERE id = ?")
+            .get(subjectId) as Subject;
+
+        if (!subject || subject.user_id !== res.locals.user.id) {
+            return res.status(404).json({
+                error: "Topic not found.",
+            });
+        }
+
+        const stmt = db.prepare(
+            "INSERT INTO topics (subject_id, name) VALUES (?, ?)"
+        );
+        const r = stmt.run(subjectId, name);
+
+        const topic = db
+            .prepare(
+                "SELECT id, subject_id, name, status, created_at FROM topics WHERE id = ?"
+            )
+            .get(r.lastInsertRowid as number) as Topic;
+
+        return res.status(201).json(topic);
+    }
+);
+
+app.put("/topics/:topicId", authHandler, (req: Request, res: Response) => {
+    const topicId = parseInt(req.params.topicId);
+
+    const { name, status } = req.body;
+    if (!name && !status) {
+        return res.status(404).json({
+            error: "Name or status is required.",
+        });
+    }
+
+    const topic = db
+        .prepare("SELECT id, subject_id, name, status FROM topics WHERE id = ?")
+        .get(topicId) as Topic | undefined;
+
+    if (!topic) {
+        return res.status(404).json({ error: "Topic not found." });
+    }
+
+    const subject = db
+        .prepare("SELECT user_id FROM subjects WHERE id = ?")
+        .get(topic.subject_id) as Subject;
+
+    if (!subject || subject.user_id !== res.locals.user.id) {
+        return res.status(404).json({
+            error: "Topic not found.",
+        });
+    }
+
+    const stmt = db.prepare(
+        `UPDATE topics SET ${name ? "name = ?" : ""} ${
+            name && status ? ", status = ?" : status ? "status = ?" : ""
+        } WHERE id = ?`
+    );
+
+    const params: (string | number)[] = [];
+    if (name) params.push(name);
+    if (status) params.push(status);
+    params.push(topicId);
+
+    stmt.run(...params);
+
+    const updated = db
+        .prepare(
+            "SELECT id, subject_id, name, status, created_at FROM topics WHERE id = ?"
+        )
+        .get(topicId) as Topic;
+
+    return res.json(updated);
+});
+
+app.delete("/topics/:topicId", authHandler, (req: Request, res: Response) => {
+    const topicId = parseInt(req.params.topicId);
+    const topic = db
+        .prepare("SELECT id, subject_id FROM topics WHERE id = ?")
+        .get(topicId) as Topic | undefined;
+
+    if (!topic) {
+        return res.status(404).json({
+            error: "Topic not found.",
+        });
+    }
+
+    const subject = db
+        .prepare("SELECT user_id FROM subjects WHERE id = ?")
+        .get(topic.subject_id) as Subject | undefined;
+
+    if (!subject || subject.user_id !== res.locals.user.id) {
+        return res.status(404).json({
+            error: "Topic not found.",
+        });
+    }
+
+    db.prepare("DELETE FROM topics WHERE id = ?").run(topicId);
 
     return res.status(204).send();
 });
