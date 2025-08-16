@@ -277,10 +277,14 @@ app.get("/auth/user", authHandler, (req: Request, res: Response) => {
      *     summary: Get current user
      *     tags: [Auth]
      *     security:
-     *       - bearerAuth: ["Token"]
+     *       - bearerAuth: []
      *     responses:
      *       200:
      *         description: Returns the current user
+     *         content:
+     *           application/json:
+     *              schema:
+     *                  $ref: '#/components/schemas/User'
      *       401:
      *         description: Unauthorized
      */
@@ -301,6 +305,12 @@ app.get("/subjects", authHandler, (req: Request, res: Response) => {
      *     responses:
      *       200:
      *         description: List of subjects
+     *         content:
+     *             application/json:
+     *               schema:
+     *                 type: array
+     *                 items:
+     *                   $ref: '#/components/schemas/Subject'
      */
     const rows = db
         .prepare(
@@ -328,6 +338,10 @@ app.get("/subjects/:id", authHandler, (req: Request, res: Response) => {
      *     responses:
      *       200:
      *         description: Subject with topics and sessions
+     *         content:
+     *           application/json:
+     *             schema:
+     *               $ref: '#/components/schemas/Subject'
      *       404:
      *         description: Subject not found
      */
@@ -390,6 +404,10 @@ app.post("/subjects", authHandler, (req: Request, res: Response) => {
      *     responses:
      *       201:
      *         description: Created subject
+     *         content:
+     *           application/json:
+     *             schema:
+     *                 $ref: '#/components/schemas/Subject'
      */
     const { name } = req.body;
     if (!name) return res.status(400).json({ error: "Name is required." });
@@ -432,6 +450,10 @@ app.put("/subjects/:id", authHandler, (req: Request, res: Response) => {
      *     responses:
      *       200:
      *         description: Updated subject
+     *         content:
+     *           application/json:
+     *             schema:
+     *                 $ref: '#/components/schemas/Subject'
      */
     const subjectId = parseInt(req.params.id);
     const { name } = req.body;
@@ -516,6 +538,12 @@ app.get(
          *     responses:
          *       200:
          *         description: List of topics
+         *         content:
+         *           application/json:
+         *             schema:
+         *               type: array
+         *               items:
+         *                 $ref: '#/components/schemas/Topic'
          */
         const subjectId = parseInt(req.params.subjectId);
         const subject = db
@@ -553,6 +581,10 @@ app.get("/topics/:topicId", authHandler, (req: Request, res: Response) => {
      *     responses:
      *       200:
      *         description: Topic with sessions
+     *         content:
+     *           application/json:
+     *             schema:
+     *                 $ref: '#/components/schemas/Topic'
      */
     const topicId = parseInt(req.params.topicId);
     const topic = db
@@ -612,6 +644,10 @@ app.post(
          *     responses:
          *       201:
          *         description: Created topic
+         *         content:
+         *           application/json:
+         *             schema:
+         *                 $ref: '#/components/schemas/Topic'
          */
         const subjectId = parseInt(req.params.subjectId);
         const { name } = req.body;
@@ -669,6 +705,10 @@ app.put("/topics/:topicId", authHandler, (req: Request, res: Response) => {
      *     responses:
      *       200:
      *         description: Updated topic
+     *         content:
+     *           application/json:
+     *             schema:
+     *                 $ref: '#/components/schemas/Topic'
      */
     const topicId = parseInt(req.params.topicId);
 
@@ -787,6 +827,12 @@ app.get(
          *     responses:
          *       200:
          *         description: List of sessions
+         *         content:
+         *           application/json:
+         *             schema:
+         *               type: array
+         *               items:
+         *                 $ref: '#/components/schemas/Session'
          */
         const topicId = parseInt(req.params.topicId);
         const topic = db
@@ -855,6 +901,10 @@ app.post(
          *     responses:
          *       201:
          *         description: Created session
+         *         content:
+         *           application/json:
+         *             schema:
+         *                 $ref: '#/components/schemas/Topic'
          */
         const topicId = parseInt(req.params.topicId);
         const topic = db
@@ -935,6 +985,89 @@ const options = {
                     type: "http",
                     scheme: "bearer",
                     bearerFormat: "JWT",
+                },
+            },
+            schemas: {
+                User: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "integer",
+                        },
+                        name: {
+                            type: "string",
+                        },
+                        email: {
+                            type: "string",
+                            format: "email",
+                        },
+                    },
+                },
+                Subject: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "integer",
+                        },
+                        user_id: {
+                            type: "integer",
+                        },
+                        name: {
+                            type: "string",
+                        },
+                        created_at: {
+                            type: "string",
+                            format: "date-time",
+                        },
+                    },
+                },
+                Topic: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "integer",
+                        },
+                        subject_id: {
+                            type: "integer",
+                        },
+                        name: {
+                            type: "string",
+                        },
+                        status: {
+                            type: "string",
+                            enum: ["pending", "in_progress", "completed"],
+                        },
+                        created_at: {
+                            type: "string",
+                            format: "date-time",
+                        },
+                    },
+                },
+                Session: {
+                    type: "object",
+                    properties: {
+                        id: {
+                            type: "integer",
+                        },
+                        topic_id: {
+                            type: "integer",
+                        },
+                        start_time: {
+                            type: "string",
+                            format: "date-time",
+                        },
+                        duration: {
+                            type: "integer",
+                        },
+                        notes: {
+                            type: "string",
+                            nullable: true,
+                        },
+                        created_at: {
+                            type: "string",
+                            format: "date-time",
+                        },
+                    },
                 },
             },
         },
