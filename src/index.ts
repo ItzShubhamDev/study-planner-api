@@ -146,7 +146,16 @@ app.get("/", (_req: Request, res: Response) => {
         description:
             "An API provides endpoints for planning your study topics and subjects.",
         status: "OK",
-        endpoints: [],
+        endpoints: [
+            "/auth/register",
+            "/auth/login",
+            "/auth/user",
+            "/subjects",
+            "/subjects/:id",
+            "/subjects/:subjectId/topics",
+            "/topics/:topicId",
+            "/topics/:topicId/sessions",
+        ],
     });
 });
 
